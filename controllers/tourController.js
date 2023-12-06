@@ -1,33 +1,24 @@
 const fs = require('fs');
 const Tour = require('../models/tourModel');
+const APIFeatures = require('../utils/apiFeatures');
 
-// const tours = JSON.parse(
-//   fs.readFileSync(`${__dirname}/../dev-data/data/tours-simple.json`),
-// );
-
-// exports.checkID = (req, res, next, val) => {
-//   if (val > tours.length) {
-//     return res.status(404).json({
-//       status: 'fail',
-//       message: 'invalid ID',
-//     });
-//   }
-//   next();
-// };
-
-// exports.checkIsValidBody = (req, res, next) => {
-//   if (!(req.body.name && req.body.duration && req.body.difficulty)) {
-//     return res.status(400).json({
-//       status: 'fail',
-//       message: 'Missing parameters',
-//     });
-//   }
-//   next();
-// };
+exports.aliasTopTours = (req, res, next) => {
+  req.query.limit = 5;
+  req.query.sort = 'price';
+  // req.query.fields = 'name, ratingsAverage, price, summary';
+  next();
+};
 
 exports.getAllTours = async (req, res) => {
   try {
-    const tours = await Tour.find();
+    const features = new APIFeatures(Tour.find(), req.query)
+      .filter()
+      .sort()
+      .limitFields()
+      .paginate();
+
+    const tours = await features.query;
+    //sending response
     res.status(200).json({
       requestedAt: req.requestTime,
       status: 'success',
@@ -112,6 +103,44 @@ exports.deleteTour = async (req, res) => {
   } catch (error) {
     res.status(404).json({
       status: 'fail',
+    });
+  }
+};
+exports.getTourStats = async (req, res) => {
+  try {
+    const stats = await Tour.aggregate([
+      {
+        $match: { ratingsAverage: { $gte: 4.5 } },
+      },
+      {
+        $group: {
+          _id: { $toUpper: '$difficulty' },
+          numTours: { $sum: 1 },
+          numRatings: { $sum: '$ratingsQuantity' },
+          avgRating: { $avg: '$ratingsAverage' },
+          avgPrice: { $avg: '$price' },
+          minPrice: { $min: '$price' },
+          maxPrice: { $max: '$price' },
+        },
+      },
+      {
+        $sort: { avgPrice: -1 },
+      },
+      // {
+      //   $match: { _id: { $ne: 'EASY' } }
+      // }
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        stats,
+      },
+    });
+  } catch (err) {
+    res.status(404).json({
+      status: 'fail',
+      message: err,
     });
   }
 };
